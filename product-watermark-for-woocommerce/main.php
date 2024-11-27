@@ -48,8 +48,8 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             'key'         => '',
             'name'        => '',
             'plugin_name' => 'image_watermark',
-            'full_name'   => __('Product Watermark for WooCommerce', 'product-watermark-for-woocommerce'),
-            'norm_name'   => __('Product Watermark', 'product-watermark-for-woocommerce'),
+            'full_name'   => 'Product Watermark for WooCommerce',
+            'norm_name'   => 'Product Watermark',
             'price'       => '',
             'domain'      => 'product-watermark-for-woocommerce',
             'templates'   => image_watermark_TEMPLATE_PATH,
@@ -447,7 +447,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                 if( is_array($return) ) {
                     $meta_value = array();
                     foreach($return as $return_val) {
-                        $meta_value = array_merge($meta_value, explode($return_val));
+                        $meta_value = array_merge($meta_value, explode(',', $return_val));
                     }
                 } else {
                     $meta_value = explode(',', $return);
