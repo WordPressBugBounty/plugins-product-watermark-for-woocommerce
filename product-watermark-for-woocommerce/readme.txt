@@ -5,7 +5,7 @@ Donate link: https://berocket.com/woocommerce-products-image-watermark/?utm_sour
 Tags: product image, watermark, product watermark, picture watermark, photo watermark, protect images, promo on image, private images, image watermark, watermark image, watermark for images, watermark for product images, custom watermark position, transparent watermark, transparent product watermark, watermarking, protection, image protection, photo protection, image signature, photo signature, image security, media, gallery, signature, photography, dynamic watermark, image copyright, copyright, logo, watermark logo, add logo, featured watermark, featured image, featured, woocommerce watermark, copyright, product image, digital watermark, watermark photo, watermark products, watermark woocommerce, watermark wc, watermark shop, watermark catalog, watermark wordpress, watermark wp, berocket, berocket product watermark for woocommerce
 Requires at least: 5.0
 Tested up to: 6.7
-Stable tag: 1.3.8
+Stable tag: 1.3.9
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -95,6 +95,10 @@ You can try this plugin's admin side [here](https://berocket.com/woocommerce-pro
 ---
 
 == Changelog ==
+
+= 1.3.9 =
+* Enhancement - Compatibility version: WooCommerce 9.5
+* Fix - Change CDN links for elements
 
 = 1.3.8 =
 * Enhancement - Compatibility version: Wordpress 6.7 and WooCommerce 9.4
