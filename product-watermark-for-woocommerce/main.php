@@ -15,14 +15,6 @@ class BeRocket_image_watermark extends BeRocket_Framework {
     protected $disable_settings_for_admin = array();
     protected $check_init_array = array(
         array(
-            'check' => 'woocommerce_version',
-            'data' => array(
-                'version' => '3.0',
-                'operator' => '>=',
-                'notice'   => 'Plugin Product Watermark for WooCommerce required WooCommerce version 3.0 or higher'
-            )
-        ),
-        array(
             'check' => 'framework_version',
             'data' => array(
                 'version' => '2.1',
@@ -265,6 +257,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
 		$image_data_class = new BeRocket_attachment_data($post_id);
 		$image_data = $image_data_class->get_attachment_info();
 		if( $image_data != FALSE ) {
+            do_action('brwm_add_watermark_to_images_before_all', $post_id, $generation);
 			$fullsize_filepath = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . $image_data['relative_path'];
 			$this->backup_image($fullsize_filepath, 'restore');
 			$all_sizes = array(
@@ -366,6 +359,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                 remove_filter('intermediate_image_sizes_advanced', array($this, 'intermediate_image_sizes_advanced'));
                 wp_update_attachment_metadata($post_id, $attachment_metadata);
             }
+            do_action('brwm_add_watermark_to_images_after_all', $post_id, $generation);
 		} else {
             echo '<span class="error">Image data error('.$post_id.')</span>';
             BeRocket_error_notices::add_plugin_error($this->info['id'], 'Image data error', array(

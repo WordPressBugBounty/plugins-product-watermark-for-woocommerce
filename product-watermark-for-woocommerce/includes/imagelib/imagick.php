@@ -37,18 +37,22 @@ class berocket_watermark_imagick {
         return true;
     }
     public static function get_prepared_image($path) {
-        $images = new Imagick($path);
-        if( $images->count() != 1 ) {
+        try {
+            $images = new Imagick($path);
+            if( $images->count() != 1 ) {
+                return FALSE;
+            }
+            $image_width = $images->getImageWidth();
+            $image_height = $images->getImageHeight();
+            $mime_type = pathinfo($path, PATHINFO_EXTENSION);
+            $mime_type = strtolower($mime_type);
+            if( $mime_type == 'jpg' ) {
+                $mime_type = 'jpeg';
+            }
+            return array($mime_type, $images, $image_width, $image_height);
+        } catch (ImagickException $e) {
             return FALSE;
         }
-        $image_width = $images->getImageWidth();
-        $image_height = $images->getImageHeight();
-        $mime_type = pathinfo($path, PATHINFO_EXTENSION);
-        $mime_type = strtolower($mime_type);
-        if( $mime_type == 'jpg' ) {
-            $mime_type = 'jpeg';
-        }
-        return array($mime_type, $images, $image_width, $image_height);
     }
     public static function save_ready_image($image_content, $mime_type, $path, $destroy = true) {
         $upload_dir = wp_upload_dir();

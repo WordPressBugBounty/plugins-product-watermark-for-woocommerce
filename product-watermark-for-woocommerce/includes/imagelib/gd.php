@@ -55,14 +55,18 @@ class berocket_watermark_gd {
         if( $image_content === false ) {
             return false;
         }
-        imagealphablending($image_content, false);
-        imagesavealpha($image_content, true);
-        $truecolor = imagecreatetruecolor($image_width, $image_height);
-        $transparent = imagecolorallocatealpha($truecolor, 0, 0, 0, 127);
-        imagefill($truecolor, 0, 0, $transparent);
-        imagecopyresampled($truecolor,$image_content,0,0,0,0, $image_width,$image_height,$image_width,$image_height);
-        imagedestroy($image_content);
-        return array($mime_type, $truecolor, $image_width, $image_height);
+        try {
+            imagealphablending($image_content, false);
+            imagesavealpha($image_content, true);
+            $truecolor = imagecreatetruecolor($image_width, $image_height);
+            $transparent = imagecolorallocatealpha($truecolor, 0, 0, 0, 127);
+            imagefill($truecolor, 0, 0, $transparent);
+            imagecopyresampled($truecolor,$image_content,0,0,0,0, $image_width,$image_height,$image_width,$image_height);
+            imagedestroy($image_content);
+            return array($mime_type, $truecolor, $image_width, $image_height);
+        } catch (Exception $e) {
+            return FALSE;
+        }
     }
     public static function image_size_validation($image_width, $image_height, $url, $path) {
         $options = self::$main->get_option();
