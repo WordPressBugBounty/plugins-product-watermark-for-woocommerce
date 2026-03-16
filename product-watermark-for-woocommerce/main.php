@@ -251,6 +251,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         return apply_filters('br_watermark_replace_types', $types);
     }
     public function add_watermark_to_images($post_id, $generation = 'create') {
+        do_action('brwm_add_watermark_to_images_start', $post_id, $generation);
         $options = $this->get_option();
         $types = $this->convert_image_types();
         $upload_dir = wp_upload_dir();
@@ -368,6 +369,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                 'attachment_id'    => $post_id
             ));
         }
+        do_action('brwm_add_watermark_to_images_end', $post_id, $generation);
     }
     public function add_single_image_watermark($image_content, $watermark, $image_data) {
         $image_content = apply_filters('berocket_apply_content_to_image_image', 
