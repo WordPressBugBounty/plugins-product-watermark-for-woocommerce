@@ -8,6 +8,7 @@ foreach (glob(__DIR__ . "/includes/*.php") as $filename)
     include_once($filename);
 }
 include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
+include_once(plugin_dir_path( __FILE__ ) . "includes/admin/funnels.php");
 
 class BeRocket_image_watermark extends BeRocket_Framework {
     public static $settings_name = 'br-image_watermark-options';
