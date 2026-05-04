@@ -7,6 +7,9 @@ foreach (glob(__DIR__ . "/includes/*.php") as $filename)
 {
     include_once($filename);
 }
+if( ( ! defined("BPIW_VER_PAID_DISABLE") || ! BPIW_VER_PAID_DISABLE ) && file_exists(__DIR__ . "/paid/paid.php") ) {
+    include_once(__DIR__ . "/paid/paid.php");
+}
 include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
 include_once(plugin_dir_path( __FILE__ ) . "includes/admin/funnels.php");
 
