@@ -44,6 +44,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             'key'         => '',
             'name'        => '',
             'plugin_name' => 'image_watermark',
+            'plugin_sku'  => 'watermarks',
             'full_name'   => 'Product Watermark for WooCommerce',
             'norm_name'   => 'Product Watermark',
             'price'       => '',
@@ -112,7 +113,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             'free_slug'     => 'product-watermark-for-woocommerce',
             'hpos_comp'     => true
         );
-        $this->active_libraries = array('addons');
+        $this->active_libraries = array('addons', 'tooltip');
         $this->feature_list = array();
         add_filter('BeRocket_framework_check_init_temp_php_extension', array($this, 'temp_php_extension_check'), 10, 2);
         parent::__construct( $this );
