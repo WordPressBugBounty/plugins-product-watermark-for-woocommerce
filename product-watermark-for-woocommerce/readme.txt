@@ -2,18 +2,18 @@
 Plugin Name: Product Watermark for WooCommerce
 Contributors: berocket, dholovnia
 Donate link: https://berocket.com/woocommerce-products-image-watermark/?utm_source=wordpress_org&utm_medium=donate&utm_campaign=image_watermark
-Tags: product image, watermark, product watermark, picture watermark, photo watermark, protect images, promo on image, private images, image watermark, watermark image, watermark for images, watermark for product images, custom watermark position, transparent watermark, transparent product watermark, watermarking, protection, image protection, photo protection, image signature, photo signature, image security, media, gallery, signature, photography, dynamic watermark, image copyright, copyright, logo, watermark logo, add logo, featured watermark, featured image, featured, woocommerce watermark, copyright, product image, digital watermark, watermark photo, watermark products, watermark woocommerce, watermark wc, watermark shop, watermark catalog, watermark wordpress, watermark wp, berocket, berocket product watermark for woocommerce
+Tags: watermark, image watermark, product image, image protection, woocommerce
 Requires at least: 5.0
-Tested up to: 7.0
-Stable tag: 3.1.0.5
+Tested up to: 7.0.1
+Stable tag: 3.1.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Allows you to add watermark to images that applied to products
+Add watermarks to WooCommerce product images to protect your content and promote your brand.
 
 == Description ==
 
-Product Watermark for WooCommerce plugin allows you to add watermark to images that applied to products. These watermarks can be an image copyright symbol, company logo or text. You will need few clicks to apply a logo or a watermark on all your product images.
+Product Watermark for WooCommerce lets you add image or text watermarks to your product images to protect your content and promote your brand. Use your company logo, copyright symbol, or custom text, and apply it to all product images in just a few clicks.
 
 = Features: =
 &#9989; Watermark for product images
@@ -95,6 +95,13 @@ You can try this plugin's admin side [here](https://berocket.com/woocommerce-pro
 ---
 
 == Changelog ==
+
+= 3.1.1 =
+* Enhancement - Harden locked features validation
+* Enhancement - Small speed improvement
+* Enhancement - Harden Global settings validation
+* Fix - Global settings, some options were not editable
+* Fix - PHP warnings in new framework submodule
 
 = 3.1.0.5 =
 * Enhancement - Compatibility version: Wordpress 7.0
