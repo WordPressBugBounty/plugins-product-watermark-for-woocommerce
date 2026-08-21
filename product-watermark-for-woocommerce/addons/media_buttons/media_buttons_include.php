@@ -5,17 +5,21 @@ class BeRocket_watermarks_media_generate_button {
         add_action( 'attachment_submitbox_misc_actions', array($this, 'attachment_submitbox_metadata') );
     }
     function attachment_submitbox_metadata() {
+        if( ! current_user_can('manage_berocket') ) {
+            return;
+        }
         $post = get_post();
-        $admin_ajax = admin_url('admin-ajax.php').'?action=berocket_single_image&id='.$post->ID.'&generation=';
-        $meta = wp_get_attachment_metadata( $post->ID );
+        if( ! $post || ! current_user_can('edit_post', $post->ID) ) {
+            return;
+        }
         $att_url = wp_get_attachment_url( $post->ID );
         list( $mime_type ) = explode( '/', $post->post_mime_type );
         if ( $mime_type === 'image' ) {
             echo '<div class="misc-pub-section" id="berocket_single_media_actions">
-                <div class="berocket_single_image_actions" data-img="' . $att_url . '">' . __('Watermark options:', 'product-watermark-for-woocommerce')
+                <div class="berocket_single_image_actions" data-img="' . esc_url($att_url) . '">' . esc_html__('Watermark options:', 'product-watermark-for-woocommerce')
                 . '
-                <a href="' . $admin_ajax.'restore' . '">' . __('Restore', 'product-watermark-for-woocommerce') . '</a>
-                | <a href="' . $admin_ajax.'create' . '">' . __('Create', 'product-watermark-for-woocommerce') . '</a>
+                <a href="#" data-id="' . absint($post->ID) . '" data-generation="restore">' . esc_html__('Restore', 'product-watermark-for-woocommerce') . '</a>
+                | <a href="#" data-id="' . absint($post->ID) . '" data-generation="create">' . esc_html__('Create', 'product-watermark-for-woocommerce') . '</a>
                 </div>
                 <div class="berocket_watermark_error_messages_single"></div>
                 </div>';
@@ -23,18 +27,20 @@ class BeRocket_watermarks_media_generate_button {
         }
     }
     function print_media_templates() {
+        if( ! current_user_can('manage_berocket') ) {
+            return;
+        }
         /*$screen = get_current_screen();
         if( $screen->id != 'upload' ) return;*/
-        $admin_ajax = admin_url('admin-ajax.php').'?action=berocket_single_image&id={{data.id}}&generation=';
         ?>
         <script>
             var BRreplace_to = '<# if ( \'image\' === data.type ) { #>';
-            BRreplace_to += '<div class="berocket_single_image_actions" data-img="{{ data.url }}"><?php _e('Watermark options:', 'product-watermark-for-woocommerce'); ?> ';
-            BRreplace_to += '<a href="<?php echo $admin_ajax.'restore'; ?>">';
-            BRreplace_to += '<?php _e('Restore', 'product-watermark-for-woocommerce'); ?>';
+            BRreplace_to += '<div class="berocket_single_image_actions" data-img="{{ data.url }}"><?php echo esc_js(__('Watermark options:', 'product-watermark-for-woocommerce')); ?> ';
+            BRreplace_to += '<a href="#" data-id="{{ data.id }}" data-generation="restore">';
+            BRreplace_to += '<?php echo esc_js(__('Restore', 'product-watermark-for-woocommerce')); ?>';
             BRreplace_to += '</a>';
-            BRreplace_to += ' | <a href="<?php echo $admin_ajax.'create'; ?>">';
-            BRreplace_to += '<?php _e('Create', 'product-watermark-for-woocommerce'); ?>';
+            BRreplace_to += ' | <a href="#" data-id="{{ data.id }}" data-generation="create">';
+            BRreplace_to += '<?php echo esc_js(__('Create', 'product-watermark-for-woocommerce')); ?>';
             BRreplace_to += '</a>';
             BRreplace_to += '<div class="berocket_watermark_error_messages_single"></div>';
             BRreplace_to += '</div>';
@@ -64,19 +70,35 @@ class BeRocket_watermarks_media_generate_button {
                     BRactions_ajax_loading = true;
                     var $this = jQuery(this);
                     var old_text = $this.html();
-                    $this.html('<?php _e('Wait...', 'product-watermark-for-woocommerce'); ?>');
-                    jQuery.get($this.attr('href'), function(data) {
+                    $this.text('<?php echo esc_js(__('Wait...', 'product-watermark-for-woocommerce')); ?>');
+                    jQuery.post(ajaxurl, {
+                        action: 'berocket_single_image',
+                        id: $this.data('id'),
+                        generation: $this.data('generation'),
+                        _ajax_nonce: berocketImageWatermark.nonce
+                    }, function(response) {
                         $this.html(old_text);
                         var url = $this.parents('.berocket_single_image_actions').data('img');
                         url = url + '?time=' + new Date().getTime();
                         $this.parents('.attachment-details').first().find('.details-image').attr('src', url);
                         $this.parents('#poststuff').first().find('.wp_attachment_image .thumbnail').attr('src', url);
                         BRactions_ajax_loading = false;
-                        if( jQuery('.berocket_watermark_error_messages_single').length && data ) {
-                            jQuery('.berocket_watermark_error_messages_single').append('<div>'+data+'</div>');
+                        if(
+                            jQuery('.berocket_watermark_error_messages_single').length
+                            && response
+                            && response.data
+                            && response.data.message
+                        ) {
+                            jQuery('<div>').text(response.data.message).appendTo('.berocket_watermark_error_messages_single');
                         }
-                    }).fail(function(){
-                        $this.html('<strong style="color:red;"><?php _e('Error', 'product-watermark-for-woocommerce'); ?></strong>');
+                    }).fail(function(response){
+                        BRactions_ajax_loading = false;
+                        $this.empty().append(
+                            jQuery('<strong>').css('color', 'red').text('<?php echo esc_js(__('Error', 'product-watermark-for-woocommerce')); ?>')
+                        );
+                        if( response.responseJSON && response.responseJSON.data && response.responseJSON.data.message ) {
+                            jQuery('<div>').text(response.responseJSON.data.message).appendTo('.berocket_watermark_error_messages_single');
+                        }
                     });
                 }
             });

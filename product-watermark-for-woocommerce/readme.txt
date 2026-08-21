@@ -4,8 +4,8 @@ Contributors: berocket, dholovnia
 Donate link: https://berocket.com/woocommerce-products-image-watermark/?utm_source=wordpress_org&utm_medium=donate&utm_campaign=image_watermark
 Tags: watermark, image watermark, product image, image protection, woocommerce
 Requires at least: 5.0
-Tested up to: 7.0.1
-Stable tag: 3.1.1
+Tested up to: 7.0.4
+Stable tag: 3.1.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -95,6 +95,10 @@ You can try this plugin's admin side [here](https://berocket.com/woocommerce-pro
 ---
 
 == Changelog ==
+
+= 3.1.2 =
+* Enhancement - Updated BeRocket framework.
+* Security - Hardened framework validation and output handling.
 
 = 3.1.1 =
 * Enhancement - Harden locked features validation

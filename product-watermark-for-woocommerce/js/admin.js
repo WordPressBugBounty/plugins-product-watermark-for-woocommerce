@@ -23,7 +23,7 @@ var br_savin_ajax = false;
             $('.berocket_image_watermark_restore .berocket_watermark_error').hide();
             $('.berocket_image_watermark_restore .berocket_watermark_spin').show();
         }
-        function berocket_watermarks_ajax_stop_error() {
+        function berocket_watermarks_ajax_stop_error(data) {
             $('.berocket_image_watermark_restore .berocket_watermark_spin').hide();
             $('.berocket_image_watermark_restore .berocket_watermark_error').show();
             if($('.br_saved').length > 0) {
@@ -32,7 +32,9 @@ var br_savin_ajax = false;
                 $('body').append('<span class="br_saved br_not_saved"><i class="fa fa-times"></i></span>');
             }
             br_saved_timeout = setTimeout( function(){destroy_br_saved();}, 5000 );
-            $('.br_save_error').html(data.responseText);
+            if( data && data.responseText ) {
+                $('.br_save_error').text(data.responseText);
+            }
             br_savin_ajax = false;
         }
         $(document).on( 'click', '.br_create_restore_image.global', function(event) {
@@ -42,11 +44,15 @@ var br_savin_ajax = false;
                 berocket_watermarks_ajax_start();
                 var image_list = $(this).data('image_list');
                 var generation = $(this).data('generation');
-                var form_data = 'action=berocket_get_watermark_images&generation='+image_list;
+                var form_data = {
+                    action: 'berocket_get_watermark_images',
+                    generation: image_list,
+                    _ajax_nonce: berocketImageWatermark.nonce
+                };
                 if( jQuery('.berocket_watermark_error_messages').length ) {
                     jQuery('.berocket_watermark_error_messages').html('');
                 }
-                $.get(url, form_data, function (data) {
+                $.post(url, form_data, function (data) {
                     var data_length;
                     if ( typeof data == 'object' ) {
                         data_length = Object.keys(data).length;
@@ -104,12 +110,22 @@ var br_savin_ajax = false;
                 br_saved_timeout = setTimeout( function(){destroy_br_saved();}, 5000 );
                 br_savin_ajax = false;
             } else {
-                form_data = 'action=berocket_single_image&id='+image_id+'&generation='+generation;
-                $.get(ajaxurl, form_data, function (data) {
+                var form_data = {
+                    action: 'berocket_single_image',
+                    id: image_id,
+                    generation: generation,
+                    _ajax_nonce: berocketImageWatermark.nonce
+                };
+                $.post(ajaxurl, form_data, function (response) {
                     BeRocket_set_watermark_restore_position(images.length);
                     berocket_restore_images(images, generation);
-                    if( jQuery('.berocket_watermark_error_messages').length && data ) {
-                        jQuery('.berocket_watermark_error_messages').append('<div>'+data+'</div>');
+                    if(
+                        jQuery('.berocket_watermark_error_messages').length
+                        && response
+                        && response.data
+                        && response.data.message
+                    ) {
+                        jQuery('<div>').text(response.data.message).appendTo('.berocket_watermark_error_messages');
                     }
                 }).fail(function(data) {
                     BeRocket_set_watermark_restore_position(images.length);

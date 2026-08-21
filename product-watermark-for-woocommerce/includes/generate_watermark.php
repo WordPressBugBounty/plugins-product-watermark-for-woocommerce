@@ -51,19 +51,34 @@ class BeRocket_watermarks_ajax_generate_button {
         AND {$wpdb->postmeta}.meta_value != '0'", 0);
         $products_lists2 = array();
         foreach($products_lists as $images) {
-            $products_lists2 = array_merge($products_lists2, explode(',', $images));
+            foreach(explode(',', $images) as $image_id) {
+                $image_id = absint($image_id);
+                if( $image_id ) {
+                    $products_lists2[] = $image_id;
+                }
+            }
         }
         unset($products_lists);
+        $products_lists2 = array_values(array_unique($products_lists2));
         $images_list = array();
         for($i = 0; $i < count($products_lists2); $i += 500) {
             $search_list = array_slice($products_lists2, $i, 500);
-            $images_list_found = $wpdb->get_col( "SELECT {$wpdb->posts}.ID FROM {$wpdb->posts}
-            WHERE {$wpdb->posts}.ID NOT IN (SELECT {$wpdb->posts}.ID FROM {$wpdb->posts}
-            JOIN {$wpdb->postmeta} 
-            ON {$wpdb->postmeta}.post_id = {$wpdb->posts}.ID 
-            AND {$wpdb->postmeta}.meta_key = 'br_watermark' 
-            AND {$wpdb->postmeta}.meta_value = '2')
-            AND {$wpdb->posts}.ID IN ('".implode("','", $search_list)."')", 0);
+            if( ! count($search_list) ) {
+                continue;
+            }
+            $placeholders = implode(',', array_fill(0, count($search_list), '%d'));
+            $query = $wpdb->prepare(
+                "SELECT {$wpdb->posts}.ID FROM {$wpdb->posts}
+                WHERE {$wpdb->posts}.post_type = 'attachment'
+                AND {$wpdb->posts}.ID NOT IN (SELECT {$wpdb->posts}.ID FROM {$wpdb->posts}
+                JOIN {$wpdb->postmeta}
+                ON {$wpdb->postmeta}.post_id = {$wpdb->posts}.ID
+                AND {$wpdb->postmeta}.meta_key = 'br_watermark'
+                AND {$wpdb->postmeta}.meta_value = '2')
+                AND {$wpdb->posts}.ID IN ({$placeholders})",
+                $search_list
+            );
+            $images_list_found = $wpdb->get_col($query, 0);
             $images_list = array_merge($images_list, $images_list_found);
         }
         $images_list = array_unique($images_list);
@@ -91,20 +106,35 @@ class BeRocket_watermarks_ajax_generate_button {
         return $posts_array->posts;
     }
     function get_all_images() {
-        if ( $_GET['generation'] != 'restore' ) {
+        if( ! check_ajax_referer('berocket_image_watermark_ajax', '_ajax_nonce', false) ) {
+            wp_send_json_error(array('message' => __('Security check failed.', 'product-watermark-for-woocommerce')), 403);
+        }
+        if( ! current_user_can('manage_berocket') ) {
+            wp_send_json_error(array('message' => __('You are not allowed to manage watermarks.', 'product-watermark-for-woocommerce')), 403);
+        }
+        $generation = isset($_POST['generation']) && is_string($_POST['generation'])
+            ? sanitize_key(wp_unslash($_POST['generation']))
+            : '';
+        if( ! in_array($generation, array('create', 'restore'), true) ) {
+            wp_send_json_error(array('message' => __('Invalid operation.', 'product-watermark-for-woocommerce')), 400);
+        }
+        if ( 'restore' !== $generation ) {
 	        $attachment_ids = $this->get_not_watermarked_attachments();
         } else {
 	        $attachment_ids = $this->get_watermarked_attachments();
         }
-        echo json_encode( $attachment_ids );
-        wp_die();
+        wp_send_json(array_values(array_unique(array_map('absint', $attachment_ids))));
     }
     function get_image_array_for_watermark($images, $status = true) {
         $images_list = array();
-        if( ! empty($images) ) {
-            $images = explode(',', $images);
+        if( ! empty($images) && is_scalar($images) ) {
+            $images = explode(',', (string) $images);
             if(is_array($images) && count($images) ) {
                 foreach($images as $image) {
+                    $image = absint($image);
+                    if( ! $image || 'attachment' !== get_post_type($image) || ! wp_attachment_is_image($image) ) {
+                        continue;
+                    }
                     $br_watermark = get_post_meta($image, 'br_watermark', true);
                     if( ($br_watermark != '2') == $status ) {
                         $images_list[] = $image;

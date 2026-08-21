@@ -14,9 +14,9 @@ class berocket_watermark_gd {
     }
     public static function apply_image($applied, $post_id, $additional = array()) {
         extract($additional);
-        $get_prepared_image = self::get_prepared_image($all_sizes[$base_type]['fullpath']);
-        if( $get_prepared_image === FALSE ) {
-            echo '<span class="error">Incorrect MIME type('.$all_sizes[$base_type]['path'].')</span>';
+        $image_info = self::get_image_info($all_sizes[$base_type]['fullpath']);
+        if( $image_info === FALSE ) {
+            echo '<span class="error">Incorrect MIME type(' . esc_html($all_sizes[$base_type]['path']) . ')</span>';
             BeRocket_error_notices::add_plugin_error(self::$main->info['id'], 'Incorrect MIME type', array(
                 'type'          => $base_type,
                 'path'          => $all_sizes[$base_type]['path'],
@@ -24,11 +24,16 @@ class berocket_watermark_gd {
             ));
             return false;
         }
-        list($mime_type, $image_content, $image_width, $image_height) = $get_prepared_image;
+        list($mime_type, $image_width, $image_height) = $image_info;
         if( ($error_message = self::image_size_validation($image_width, $image_height, $all_sizes[$base_type]['path'], $all_sizes[$base_type]['fullpath'])) !== FALSE ) {
-            echo '<span class="error">'.$error_message.'('.$all_sizes[$base_type]['path'].')</span>';
+            echo '<span class="error">' . esc_html($error_message) . '(' . esc_html($all_sizes[$base_type]['path']) . ')</span>';
             return false;
         }
+        $get_prepared_image = self::get_prepared_image($all_sizes[$base_type]['fullpath'], $image_info);
+        if( $get_prepared_image === FALSE ) {
+            return false;
+        }
+        list($mime_type, $image_content, $image_width, $image_height) = $get_prepared_image;
         $image_content = apply_filters('berocket_apply_all_content_to_image', 
             $image_content,
             $watermark,
@@ -40,15 +45,34 @@ class berocket_watermark_gd {
         self::save_ready_image($image_content, $mime_type, $all_sizes[$base_type]['path']);
         return true;
     }
-    public static function get_prepared_image($path) {
-        list($image_width, $image_height) = getimagesize($path);
-        $mime_type = pathinfo($path, PATHINFO_EXTENSION);
-        $mime_type = strtolower($mime_type);
-        if( $mime_type == 'jpg' ) {
-            $mime_type = 'jpeg';
+    public static function get_image_info($path) {
+        $image_size = @getimagesize($path);
+        if( ! is_array($image_size) || empty($image_size[0]) || empty($image_size[1]) ) {
+            return false;
         }
+        list($image_width, $image_height) = $image_size;
+        $mime_types = array(
+            'image/jpeg' => 'jpeg',
+            'image/png'  => 'png',
+            'image/gif'  => 'gif',
+            'image/webp' => 'webp',
+            'image/avif' => 'avif',
+        );
+        $detected_mime = wp_get_image_mime($path);
+        $mime_type = isset($mime_types[$detected_mime]) ? $mime_types[$detected_mime] : '';
+        if( ! $mime_type ) {
+            return false;
+        }
+        return array($mime_type, $image_width, $image_height);
+    }
+    public static function get_prepared_image($path, $image_info = false) {
+        $image_info = is_array($image_info) ? $image_info : self::get_image_info($path);
+        if( false === $image_info ) {
+            return false;
+        }
+        list($mime_type, $image_width, $image_height) = $image_info;
         $create_function_data = 'imagecreatefrom' . $mime_type;
-        if( !function_exists($create_function_data) ) {
+        if( ! function_exists($create_function_data) ) {
             return false;
         }
         $image_content = $create_function_data($path);
@@ -70,8 +94,8 @@ class berocket_watermark_gd {
     }
     public static function image_size_validation($image_width, $image_height, $url, $path) {
         $options = self::$main->get_option();
-        $max_img_width = intval($options['max_img_width']);
-        $max_img_height = intval($options['max_img_height']);
+        $max_img_width = max(1, intval($options['max_img_width']));
+        $max_img_height = max(1, intval($options['max_img_height']));
         $memory_needed = self::calculate_image_memory_usage($image_width, $image_height);
         $memory_needed = $memory_needed * 2;
         $memory_left = berocket_get_memory_data($memory_needed, br_get_value_from_array($options, 'php_memory_limit'));
@@ -133,6 +157,15 @@ class berocket_watermark_gd {
             'text_repeat'   => false,
             'image_data'    => array()
         ), $args);
+        $args['text'] = isset($args['text']) && is_scalar($args['text']) ? (string) $args['text'] : '';
+        $args['text_alpha'] = isset($args['text_alpha']) && is_scalar($args['text_alpha']) ? $args['text_alpha'] : 0;
+        $args['text_angle'] = isset($args['text_angle']) && is_scalar($args['text_angle']) ? $args['text_angle'] : 0;
+        $args['font_size'] = isset($args['font_size']) && is_scalar($args['font_size']) ? $args['font_size'] : 20;
+        $font_color = isset($args['font_color']) && is_scalar($args['font_color'])
+            ? sanitize_hex_color((string) $args['font_color'])
+            : '';
+        $args['font_color'] = $font_color ? $font_color : '#000000';
+        $args['image_data'] = is_array($args['image_data']) ? $args['image_data'] : array();
         extract($args['image_data']);
         if( strlen($args['text']) ) {
             $text       = $args['text'];
@@ -172,7 +205,6 @@ class berocket_watermark_gd {
     }
     function image($image_content, $args = array()) {
         $options = self::$main->get_option();
-        $upload_dir = wp_upload_dir();
         $args = array_merge(array(
             'image'         => '',
             'width'         => '',
@@ -182,29 +214,40 @@ class berocket_watermark_gd {
             'ratio'         => '',
             'image_data'    => array()
         ), $args);
+        $args['image'] = isset($args['image']) && is_string($args['image']) ? $args['image'] : '';
+        $args['width'] = isset($args['width']) && is_scalar($args['width'])
+            ? min(100, max(1, (float) $args['width']))
+            : 50;
+        $args['height'] = isset($args['height']) && is_scalar($args['height'])
+            ? min(100, max(1, (float) $args['height']))
+            : 50;
+        $args['left'] = isset($args['left']) && is_scalar($args['left'])
+            ? min(100 - $args['width'], max(0, (float) $args['left']))
+            : 25;
+        $args['top'] = isset($args['top']) && is_scalar($args['top'])
+            ? min(100 - $args['height'], max(0, (float) $args['top']))
+            : 25;
+        $args['ratio'] = ! empty($args['ratio']);
+        $args['image_data'] = is_array($args['image_data']) ? $args['image_data'] : array();
         extract($args['image_data']);
         if( ! empty($args['image']) ) {
-			$image_url = str_replace('https:', 'http:', $args['image']);
-			$upload_url = str_replace('https:', 'http:', $upload_dir['baseurl']);
-			$image_url = str_replace('http://www.', 'http://', $image_url);
-			$upload_url = str_replace('http://www.', 'http://', $upload_url);
-            $watermark_image_i = str_replace($upload_url, '', $image_url);
-            $watermark_image = $upload_dir['basedir'].( (! empty($data['path']) && $watermark_image_i[0] != '/' && substr($upload_dir['basedir'], -1) != '/') ? '/' : '' ).$watermark_image_i;
-            if( ! file_exists($watermark_image) ) {
+            $watermark_image = self::$main->get_watermark_file_path($args['image']);
+            if( ! $watermark_image ) {
                 return $image_content;
             }
-            $watermark_type = pathinfo($watermark_image, PATHINFO_EXTENSION);
-            $watermark_type = strtolower($watermark_type);
-            if( $watermark_type == 'jpg' ) {
-                $watermark_type = 'jpeg';
-            }
-            $create_function_watermark = 'imagecreatefrom' . $watermark_type;
-            if( !function_exists($create_function_watermark) ) {
+            $watermark_info = self::get_image_info($watermark_image);
+            if( false === $watermark_info ) {
                 return $image_content;
             }
-            $watermark_content = $create_function_watermark($watermark_image);
-            $watermark_width = imagesx($watermark_content);
-            $watermark_height = imagesy($watermark_content);
+            list(, $watermark_width, $watermark_height) = $watermark_info;
+            if( false !== self::image_size_validation($watermark_width, $watermark_height, '', $watermark_image) ) {
+                return $image_content;
+            }
+            $prepared_watermark = self::get_prepared_image($watermark_image, $watermark_info);
+            if( false === $prepared_watermark ) {
+                return $image_content;
+            }
+            list(, $watermark_content, $watermark_width, $watermark_height) = $prepared_watermark;
             $ratio_w = $watermark_width / ($image_width / 100 * $args['width']);
             $ratio_h = $watermark_height / ($image_height / 100 * $args['height']);
             $ratio = max( $ratio_w, $ratio_h );

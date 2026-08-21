@@ -121,9 +121,9 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             if ( $this->init_validation() ) {
                 $options = $this->get_option();
                 if( ! empty($options['image_lib']) && $options['image_lib'] == 'imagick' && class_exists('Imagick') ) {
-                    include_once('includes/imagelib/imagick.php');
+                    include_once __DIR__ . '/includes/imagelib/imagick.php';
                 } else {
-                    include_once('includes/imagelib/gd.php');
+                    include_once __DIR__ . '/includes/imagelib/gd.php';
                 }
                 //add meta key to image that must be watermarked
                 add_action('added_post_meta', array($this, 'set_thumbnail_id'), 10, 4);
@@ -152,18 +152,42 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         return $result_and;
     }
     function berocket_single_image() {
-        if( ! empty($_GET['id']) && ! empty($_GET['generation']) ) {
-            $id = intval($_GET['id']);
-            if( current_user_can('edit_post', $id) ) {
-                $this->add_watermark_to_images($id, $_GET['generation']);
-                if( $_GET['generation'] == 'restore' ) {
-                    update_post_meta($id, 'br_watermark', '1');
-                } else {
-                    update_post_meta($id, 'br_watermark', '2');
-                }
-            }
+        if( ! check_ajax_referer('berocket_image_watermark_ajax', '_ajax_nonce', false) ) {
+            wp_send_json_error(array('message' => __('Security check failed.', 'product-watermark-for-woocommerce')), 403);
         }
-        wp_die();
+        if( ! current_user_can($this->option_page_capability()) ) {
+            wp_send_json_error(array('message' => __('You are not allowed to manage watermarks.', 'product-watermark-for-woocommerce')), 403);
+        }
+
+        $id = isset($_POST['id']) && is_scalar($_POST['id']) ? absint($_POST['id']) : 0;
+        $generation = isset($_POST['generation']) && is_string($_POST['generation'])
+            ? sanitize_key(wp_unslash($_POST['generation']))
+            : '';
+        if(
+            ! $id
+            || ! in_array($generation, array('create', 'restore'), true)
+            || 'attachment' !== get_post_type($id)
+            || ! wp_attachment_is_image($id)
+            || ! current_user_can('edit_post', $id)
+        ) {
+            wp_send_json_error(array('message' => __('Invalid image or operation.', 'product-watermark-for-woocommerce')), 400);
+        }
+
+        ob_start();
+        $success = $this->add_watermark_to_images($id, $generation);
+        $message = trim(wp_strip_all_tags(ob_get_clean()));
+        if( ! $success ) {
+            wp_send_json_error(array(
+                'message' => $message ? $message : __('The image could not be processed.', 'product-watermark-for-woocommerce'),
+            ), 500);
+        }
+        update_post_meta($id, 'br_watermark', 'restore' === $generation ? '1' : '2');
+
+        wp_send_json_success(array(
+            'id'         => $id,
+            'generation' => $generation,
+            'message'    => $message,
+        ));
     }
     function init_validation() {
         return parent::init_validation() && $this->check_framework_version();
@@ -207,6 +231,10 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         }
     }
     public function replace_image ($status, $post_id, $size) {
+        $post_id = absint($post_id);
+        if( ! $post_id || 'attachment' !== get_post_type($post_id) || ! wp_attachment_is_image($post_id) ) {
+            return $status;
+        }
         $post_ready = get_option('br_watermarked');
         if( ! isset( $post_ready ) || ! is_array( $post_ready ) ) {
             $post_ready = array();
@@ -222,9 +250,8 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             } else {
                 remove_filter( 'image_downsize', array( $this, 'replace_image' ), 200, 3 );
             }
-            $br_watermark = '2';
-            $this->add_watermark_to_images($post_id, 'create');
-            update_post_meta($post_id, 'br_watermark', $br_watermark);
+            $watermark_applied = $this->add_watermark_to_images($post_id, 'create');
+            update_post_meta($post_id, 'br_watermark', $watermark_applied ? '2' : '1');
             $options = $this->get_option();
             if( ! empty($options['enable_live']) ) {
                 if ( class_exists( 'Jetpack' ) && Jetpack::is_module_active( 'photon' ) ) {
@@ -256,38 +283,57 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         return apply_filters('br_watermark_replace_types', $types);
     }
     public function add_watermark_to_images($post_id, $generation = 'create') {
+        $post_id = absint($post_id);
+        if(
+            ! $post_id
+            || ! in_array($generation, array('create', 'restore'), true)
+            || 'attachment' !== get_post_type($post_id)
+            || ! wp_attachment_is_image($post_id)
+        ) {
+            return false;
+        }
         do_action('brwm_add_watermark_to_images_start', $post_id, $generation);
+        $operation_success = false;
         $options = $this->get_option();
         $types = $this->convert_image_types();
-        $upload_dir = wp_upload_dir();
 		$image_data_class = new BeRocket_attachment_data($post_id);
 		$image_data = $image_data_class->get_attachment_info();
 		if( $image_data != FALSE ) {
             do_action('brwm_add_watermark_to_images_before_all', $post_id, $generation);
-			$fullsize_filepath = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . $image_data['relative_path'];
+			$fullsize_filepath = $this->get_upload_file_path($image_data['relative_path']);
+            if( ! $fullsize_filepath ) {
+                return false;
+            }
 			$this->backup_image($fullsize_filepath, 'restore');
 			$all_sizes = array(
 				'full'	=> array(
 					'fullpath' => $fullsize_filepath,
 					'path' => $image_data['relative_path']
 				)
-			);
+            );
             if( ! empty($image_data['scaled']) ) {
-                $all_sizes['full_scaled'] = array(
-					'fullpath' => $upload_dir['basedir'] . DIRECTORY_SEPARATOR . $image_data['scaled'],
-					'path' => $image_data['scaled']
-				);
+                $scaled_filepath = $this->get_upload_file_path($image_data['scaled']);
+                if( $scaled_filepath ) {
+                    $all_sizes['full_scaled'] = array(
+                        'fullpath' => $scaled_filepath,
+                        'path' => $image_data['scaled']
+                    );
+                }
             }
             foreach($image_data['registered_sizes'] as $size) {
                 if( ! empty($size['filename']) ) {
-                    $size_filepath = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . $image_data['folder'] . DIRECTORY_SEPARATOR . $size['filename'];
+                    $size_relative_path = $image_data['folder'] . DIRECTORY_SEPARATOR . $size['filename'];
+                    $size_filepath = $this->get_upload_file_path($size_relative_path);
+                    if( ! $size_filepath ) {
+                        continue;
+                    }
                     $this->backup_image($size_filepath, 'restore');
                     if( $fullsize_filepath == $size_filepath && isset($types[$size['label']]) ) {
                         unset($types[$size['label']]);
                     }
                     $all_sizes[$size['label']] = array(
                         'fullpath' => $size_filepath,
-                        'path' => $image_data['folder'] . DIRECTORY_SEPARATOR . $size['filename']
+                        'path' => $size_relative_path
                     );
                 }
             }
@@ -296,7 +342,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                 $image_dimension = array_pop($image_name);
                 $image_name = implode('.', $image_name);
                 $image_name = $image_name . '*_br_backup.' . $image_dimension;
-                $image_path = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . $image_data['folder'] . DIRECTORY_SEPARATOR . $image_name;
+                $image_path = dirname($fullsize_filepath) . DIRECTORY_SEPARATOR . $image_name;
                 $files = glob($image_path);
                 if( is_array($files) ) {
                     foreach($files as $backup_filepath) {
@@ -308,6 +354,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                         }
                     }
                 }
+                $operation_success = true;
             } else {
                 try {
                     $types_applied = 0;
@@ -344,9 +391,11 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                             'image_data'    => $image_data,
                             'attachment_id' => $post_id
                         ));
+                    } else {
+                        $operation_success = true;
                     }
-                } catch (Exception $e) {
-                    echo '<span class="error">', $e->getMessage(), '</span>';
+                } catch (Throwable $e) {
+                    echo '<span class="error">', esc_html($e->getMessage()), '</span>';
                     BeRocket_error_notices::add_plugin_error($this->info['id'], 'Exception', array(
                         'error'         => $e->getMessage(),
                         'types'         => $types,
@@ -358,12 +407,16 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             include_once( ABSPATH . 'wp-admin/includes/image.php' );
             $img_metadata = wp_get_attachment_metadata($post_id);
             if( $img_metadata != false ) {
-                $uploads = wp_get_upload_dir();
                 $attachment_metadata = wp_get_attachment_metadata($post_id);
-                add_filter('intermediate_image_sizes_advanced', array($this, 'intermediate_image_sizes_advanced'));
-                wp_generate_attachment_metadata($post_id, $uploads['basedir'].'/'.$img_metadata['file']);
-                remove_filter('intermediate_image_sizes_advanced', array($this, 'intermediate_image_sizes_advanced'));
-                wp_update_attachment_metadata($post_id, $attachment_metadata);
+                $metadata_source_path = isset($img_metadata['file']) && is_string($img_metadata['file'])
+                    ? $this->get_upload_file_path($img_metadata['file'])
+                    : false;
+                if( $metadata_source_path ) {
+                    add_filter('intermediate_image_sizes_advanced', array($this, 'intermediate_image_sizes_advanced'));
+                    wp_generate_attachment_metadata($post_id, $metadata_source_path);
+                    remove_filter('intermediate_image_sizes_advanced', array($this, 'intermediate_image_sizes_advanced'));
+                    wp_update_attachment_metadata($post_id, $attachment_metadata);
+                }
             }
             do_action('brwm_add_watermark_to_images_after_all', $post_id, $generation);
 		} else {
@@ -375,8 +428,10 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             ));
         }
         do_action('brwm_add_watermark_to_images_end', $post_id, $generation);
+        return $operation_success;
     }
     public function add_single_image_watermark($image_content, $watermark, $image_data) {
+        $watermark = is_array($watermark) ? $watermark : array();
         $image_content = apply_filters('berocket_apply_content_to_image_image', 
             $image_content, 
             array(
@@ -407,8 +462,66 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         }
     }
 
+    public function get_upload_file_path($relative_path) {
+        if( ! is_string($relative_path) || '' === $relative_path ) {
+            return false;
+        }
+        $upload_dir = wp_get_upload_dir();
+        if( ! empty($upload_dir['error']) || empty($upload_dir['basedir']) ) {
+            return false;
+        }
+        $relative_path = ltrim(wp_normalize_path($relative_path), '/');
+        $base_path = realpath($upload_dir['basedir']);
+        $file_path = realpath(trailingslashit($upload_dir['basedir']) . $relative_path);
+        if( false === $base_path || false === $file_path || ! is_file($file_path) ) {
+            return false;
+        }
+
+        $base_path = trailingslashit(wp_normalize_path($base_path));
+        $file_path = wp_normalize_path($file_path);
+        $path_is_inside_uploads = '\\' === DIRECTORY_SEPARATOR
+            ? 0 === stripos($file_path, $base_path)
+            : 0 === strpos($file_path, $base_path);
+
+        return $path_is_inside_uploads ? $file_path : false;
+    }
+
+    public function get_watermark_file_path($image_url) {
+        if( ! is_string($image_url) || '' === $image_url ) {
+            return false;
+        }
+        $upload_dir = wp_get_upload_dir();
+        if( ! empty($upload_dir['error']) || empty($upload_dir['baseurl']) ) {
+            return false;
+        }
+
+        $image_url = esc_url_raw($image_url);
+        $image_parts = wp_parse_url($image_url);
+        $upload_parts = wp_parse_url($upload_dir['baseurl']);
+        if(
+            ! $image_url
+            || ! is_array($image_parts)
+            || ! is_array($upload_parts)
+            || empty($image_parts['host'])
+            || empty($upload_parts['host'])
+            || 0 !== strcasecmp($image_parts['host'], $upload_parts['host'])
+            || (isset($image_parts['port']) ? (int) $image_parts['port'] : null) !== (isset($upload_parts['port']) ? (int) $upload_parts['port'] : null)
+        ) {
+            return false;
+        }
+
+        $image_path = isset($image_parts['path']) ? rawurldecode($image_parts['path']) : '';
+        $upload_path = isset($upload_parts['path']) ? rtrim(rawurldecode($upload_parts['path']), '/') : '';
+        if( '' === $upload_path || 0 !== strpos($image_path, $upload_path . '/') ) {
+            return false;
+        }
+
+        $relative_path = ltrim(substr($image_path, strlen($upload_path)), '/');
+        return $this->get_upload_file_path($relative_path);
+    }
+
     public function set_thumbnail_id($return, $object_id, $meta_key, $meta_value) {
-        if( $meta_key == '_thumbnail_id' ) {
+        if( $meta_key == '_thumbnail_id' && in_array(get_post_type($object_id), array('product', 'product_variation'), true) ) {
             update_post_meta($object_id, '_thumbnail_id_watermarked', '1');
             $meta_value = array($meta_value);
             $this->set_image_array_for_watermark($object_id, $meta_key, $meta_value);
@@ -416,15 +529,18 @@ class BeRocket_image_watermark extends BeRocket_Framework {
     }
 
     public function set_product_image_gallery($return, $object_id, $meta_key, $meta_value) {
-        if( $meta_key == '_product_image_gallery' ) {
+        if(
+            $meta_key == '_product_image_gallery'
+            && in_array(get_post_type($object_id), array('product', 'product_variation'), true)
+        ) {
             update_post_meta($object_id, '_product_image_gallery_watermarked', '1');
-            $meta_value = explode(',', $meta_value);
+            $meta_value = is_scalar($meta_value) ? explode(',', (string) $meta_value) : array();
             $this->set_image_array_for_watermark($object_id, $meta_key, $meta_value);
         }
     }
 
     public function get_thumbnail_id($return, $object_id, $meta_key, $single) {
-        if( $meta_key == '_thumbnail_id' ) {
+        if( $meta_key == '_thumbnail_id' && in_array(get_post_type($object_id), array('product', 'product_variation'), true) ) {
             $watermarked = get_post_meta($object_id, '_thumbnail_id_watermarked', true);
             if( empty($watermarked) ) {
                 update_post_meta($object_id, '_thumbnail_id_watermarked', '1');
@@ -439,7 +555,10 @@ class BeRocket_image_watermark extends BeRocket_Framework {
     }
 
     public function get_product_image_gallery($return, $object_id, $meta_key, $single) {
-        if( $meta_key == '_product_image_gallery' ) {
+        if(
+            $meta_key == '_product_image_gallery'
+            && in_array(get_post_type($object_id), array('product', 'product_variation'), true)
+        ) {
             $watermarked = get_post_meta($object_id, '_product_image_gallery_watermarked', true);
             if( empty($watermarked) ) {
                 update_post_meta($object_id, '_product_image_gallery_watermarked', '1');
@@ -448,10 +567,12 @@ class BeRocket_image_watermark extends BeRocket_Framework {
                 if( is_array($return) ) {
                     $meta_value = array();
                     foreach($return as $return_val) {
-                        $meta_value = array_merge($meta_value, explode(',', $return_val));
+                        if( is_scalar($return_val) ) {
+                            $meta_value = array_merge($meta_value, explode(',', (string) $return_val));
+                        }
                     }
                 } else {
-                    $meta_value = explode(',', $return);
+                    $meta_value = is_scalar($return) ? explode(',', (string) $return) : array();
                 }
                 $this->set_image_array_for_watermark($object_id, $meta_key, $meta_value);
                 add_filter('get_post_metadata', array($this, 'get_product_image_gallery'), 1, 4);
@@ -462,7 +583,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
 
     public function get_image_id_prop($return) {
         global $post;
-        if( ! empty($post) ) {
+        if( ! empty($post) && in_array(get_post_type($post), array('product', 'product_variation'), true) ) {
             $watermarked = get_post_meta($post->ID, '_thumbnail_id_watermarked', true);
             if( empty($watermarked) ) {
                 update_post_meta($post->ID, '_thumbnail_id_watermarked', '1');
@@ -480,7 +601,12 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         if( $post_type == 'product' || $post_type == 'product_variation' ) {
             if(is_array($meta_value) && count($meta_value) ) {
                 foreach($meta_value as $attachment_id) {
-                    if( ! empty($attachment_id) ) {
+                    $attachment_id = is_scalar($attachment_id) ? absint($attachment_id) : 0;
+                    if(
+                        $attachment_id
+                        && 'attachment' === get_post_type($attachment_id)
+                        && wp_attachment_is_image($attachment_id)
+                    ) {
                         $br_watermark = get_post_meta($attachment_id, 'br_watermark', true);
                         if( empty($br_watermark) ) {
                             update_post_meta($attachment_id, 'br_watermark', '1');
@@ -503,6 +629,13 @@ class BeRocket_image_watermark extends BeRocket_Framework {
     public function admin_init() {
         parent::admin_init();
         wp_enqueue_script( 'berocket_image_watermark_admin', plugins_url( 'js/admin.js', __FILE__ ), array( 'jquery' ), BeRocket_image_watermark_version );
+        wp_localize_script(
+            'berocket_image_watermark_admin',
+            'berocketImageWatermark',
+            array(
+                'nonce' => wp_create_nonce('berocket_image_watermark_ajax'),
+            )
+        );
         wp_register_style( 'berocket_image_watermark_admin_style', plugins_url( 'css/admin.css', __FILE__ ), "", BeRocket_image_watermark_version );
         wp_enqueue_style( 'berocket_image_watermark_admin_style' );
         if( ! empty($_GET['page']) && $_GET['page'] == $this->values[ 'option_page' ] ) {
@@ -660,21 +793,93 @@ class BeRocket_image_watermark extends BeRocket_Framework {
     public function section_generate($data, $options) {
         ob_start();
         echo '<td colspan="2">';
-        include('templates/generate.php');
+        include image_watermark_TEMPLATE_PATH . 'generate.php';
         echo '</td>';
         return ob_get_clean();
     }
     public function sanitize_option( $input ) {
+        $input = is_array($input) ? $input : array();
         if( empty($input['php_memory_limit']) ) {
             $input['php_memory_limit'] = (function_exists('ini_get') ? ini_get('memory_limit') : '');
         }
         $input = parent::sanitize_option( $input );
-        if( !empty($input['addons']) && is_array($input['addons']) ) {
-            foreach($input['addons'] as $i => $addon) {
-                if( empty($addon) ) {
-                    unset($input['addons'][$i]);
-                }
+        $input['enable_live'] = empty($input['enable_live']) ? '0' : '1';
+        $input['fix_gd'] = empty($input['fix_gd']) ? '0' : '1';
+        $input['jpeg_quantity'] = isset($input['jpeg_quantity']) && is_scalar($input['jpeg_quantity'])
+            ? min(100, max(1, absint($input['jpeg_quantity'])))
+            : 90;
+        foreach(array('max_img_width', 'max_img_height') as $dimension) {
+            $input[$dimension] = isset($input[$dimension]) && is_scalar($input[$dimension])
+                ? min(10000, max(1, absint($input[$dimension])))
+                : 2500;
+        }
+        $input['php_memory_limit'] = isset($input['php_memory_limit']) && is_scalar($input['php_memory_limit'])
+            ? sanitize_text_field($input['php_memory_limit'])
+            : '';
+        $input['image_lib'] = isset($input['image_lib']) && 'imagick' === $input['image_lib'] && class_exists('Imagick')
+            ? 'imagick'
+            : '';
+
+        foreach(array('shop_thumbnail', 'shop_single', 'shop_catalog') as $watermark_name) {
+            $watermark = isset($input[$watermark_name]) && is_array($input[$watermark_name])
+                ? $input[$watermark_name]
+                : array();
+            $watermark['text'] = isset($watermark['text']) && is_scalar($watermark['text'])
+                ? sanitize_text_field($watermark['text'])
+                : '';
+            $watermark['text_repeat'] = empty($watermark['text_repeat']) ? '0' : '1';
+            $watermark['text_alpha'] = isset($watermark['text_alpha']) && is_scalar($watermark['text_alpha'])
+                ? min(100, max(0, absint($watermark['text_alpha'])))
+                : 30;
+            $watermark['text_angle'] = isset($watermark['text_angle']) && is_scalar($watermark['text_angle'])
+                ? min(360, max(0, (float) $watermark['text_angle']))
+                : 0;
+            $watermark['font_size'] = isset($watermark['font_size']) && is_scalar($watermark['font_size'])
+                ? min(72, max(8, absint($watermark['font_size'])))
+                : 20;
+            $font_color = isset($watermark['font_color']) && is_scalar($watermark['font_color'])
+                ? sanitize_hex_color((string) $watermark['font_color'])
+                : '';
+            $watermark['font_color'] = $font_color ? $font_color : '#FFFFFF';
+            $watermark['image_count'] = isset($watermark['image_count']) && is_scalar($watermark['image_count'])
+                ? min(4, absint($watermark['image_count']))
+                : 0;
+
+            foreach(array('image', 'ratio', 'top', 'left', 'width', 'height') as $array_key) {
+                $watermark[$array_key] = isset($watermark[$array_key]) && is_array($watermark[$array_key])
+                    ? $watermark[$array_key]
+                    : array();
             }
+            for($i = 0; $i < 5; $i++) {
+                $image_url = isset($watermark['image'][$i]) && is_scalar($watermark['image'][$i])
+                    ? esc_url_raw($watermark['image'][$i])
+                    : '';
+                $watermark['image'][$i] = $image_url && $this->get_watermark_file_path($image_url)
+                    ? $image_url
+                    : '';
+                $watermark['ratio'][$i] = empty($watermark['ratio'][$i]) ? '0' : '1';
+                $watermark['width'][$i] = isset($watermark['width'][$i]) && is_scalar($watermark['width'][$i])
+                    ? min(100, max(1, absint($watermark['width'][$i])))
+                    : 50;
+                $watermark['height'][$i] = isset($watermark['height'][$i]) && is_scalar($watermark['height'][$i])
+                    ? min(100, max(1, absint($watermark['height'][$i])))
+                    : 50;
+                $watermark['left'][$i] = isset($watermark['left'][$i]) && is_scalar($watermark['left'][$i])
+                    ? min(100 - $watermark['width'][$i], max(0, absint($watermark['left'][$i])))
+                    : 25;
+                $watermark['top'][$i] = isset($watermark['top'][$i]) && is_scalar($watermark['top'][$i])
+                    ? min(100 - $watermark['height'][$i], max(0, absint($watermark['top'][$i])))
+                    : 25;
+            }
+            $input[$watermark_name] = $watermark;
+        }
+        if( !empty($input['addons']) && is_array($input['addons']) ) {
+            $input['addons'] = array_values(array_intersect(
+                array_filter($input['addons'], 'is_string'),
+                array('/media_buttons/media_buttons.php')
+            ));
+        } else {
+            $input['addons'] = array();
         }
         return $input;
     }

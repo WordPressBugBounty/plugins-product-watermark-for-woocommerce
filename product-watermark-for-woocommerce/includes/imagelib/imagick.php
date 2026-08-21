@@ -16,7 +16,7 @@ class berocket_watermark_imagick {
         extract($additional);
         $get_prepared_image = self::get_prepared_image($all_sizes[$base_type]['fullpath']);
         if( $get_prepared_image === FALSE ) {
-            echo '<span class="error">Incorrect MIME type('.$all_sizes[$base_type]['path'].')</span>';
+            echo '<span class="error">Incorrect MIME type(' . esc_html($all_sizes[$base_type]['path']) . ')</span>';
             BeRocket_error_notices::add_plugin_error(self::$main->info['id'], 'Incorrect MIME type', array(
                 'type'          => $base_type,
                 'path'          => $all_sizes[$base_type]['path'],
@@ -37,6 +37,37 @@ class berocket_watermark_imagick {
         return true;
     }
     public static function get_prepared_image($path) {
+        $allowed_mime_types = array(
+            'image/jpeg' => 'jpeg',
+            'image/png'  => 'png',
+            'image/gif'  => 'gif',
+            'image/webp' => 'webp',
+            'image/avif' => 'avif',
+        );
+        $image_size = @getimagesize($path);
+        $detected_mime = wp_get_image_mime($path);
+        if(
+            ! is_array($image_size)
+            || empty($image_size[0])
+            || empty($image_size[1])
+            || ! isset($allowed_mime_types[$detected_mime])
+        ) {
+            return FALSE;
+        }
+        $image_width = (int) $image_size[0];
+        $image_height = (int) $image_size[1];
+        $options = self::$main->get_option();
+        $max_img_width = max(1, intval($options['max_img_width']));
+        $max_img_height = max(1, intval($options['max_img_height']));
+        $memory_needed = $image_width * $image_height * 10;
+        $memory_left = berocket_get_memory_data($memory_needed, br_get_value_from_array($options, 'php_memory_limit'));
+        if(
+            $image_width > $max_img_width
+            || $image_height > $max_img_height
+            || $memory_left['memory_check'] <= 0
+        ) {
+            return FALSE;
+        }
         try {
             $images = new Imagick($path);
             if( $images->count() != 1 ) {
@@ -44,11 +75,7 @@ class berocket_watermark_imagick {
             }
             $image_width = $images->getImageWidth();
             $image_height = $images->getImageHeight();
-            $mime_type = pathinfo($path, PATHINFO_EXTENSION);
-            $mime_type = strtolower($mime_type);
-            if( $mime_type == 'jpg' ) {
-                $mime_type = 'jpeg';
-            }
+            $mime_type = $allowed_mime_types[$detected_mime];
             return array($mime_type, $images, $image_width, $image_height);
         } catch (ImagickException $e) {
             return FALSE;
@@ -68,6 +95,15 @@ class berocket_watermark_imagick {
             'text_repeat'   => false,
             'image_data'    => array()
         ), $args);
+        $args['text'] = isset($args['text']) && is_scalar($args['text']) ? (string) $args['text'] : '';
+        $args['text_alpha'] = isset($args['text_alpha']) && is_scalar($args['text_alpha']) ? $args['text_alpha'] : 0;
+        $args['text_angle'] = isset($args['text_angle']) && is_scalar($args['text_angle']) ? $args['text_angle'] : 0;
+        $args['font_size'] = isset($args['font_size']) && is_scalar($args['font_size']) ? $args['font_size'] : 20;
+        $font_color = isset($args['font_color']) && is_scalar($args['font_color'])
+            ? sanitize_hex_color((string) $args['font_color'])
+            : '';
+        $args['font_color'] = $font_color ? $font_color : '#000000';
+        $args['image_data'] = is_array($args['image_data']) ? $args['image_data'] : array();
         extract($args['image_data']);
         if( strlen($args['text']) ) {
             $text       = $args['text'];
@@ -124,8 +160,6 @@ class berocket_watermark_imagick {
         return $image_content;
     }
     function image($image_content, $args = array()) {
-        $options = self::$main->get_option();
-        $upload_dir = wp_upload_dir();
         $args = array_merge(array(
             'image'         => '',
             'width'         => '',
@@ -135,22 +169,32 @@ class berocket_watermark_imagick {
             'ratio'         => '',
             'image_data'    => array()
         ), $args);
+        $args['image'] = isset($args['image']) && is_string($args['image']) ? $args['image'] : '';
+        $args['width'] = isset($args['width']) && is_scalar($args['width'])
+            ? min(100, max(1, (float) $args['width']))
+            : 50;
+        $args['height'] = isset($args['height']) && is_scalar($args['height'])
+            ? min(100, max(1, (float) $args['height']))
+            : 50;
+        $args['left'] = isset($args['left']) && is_scalar($args['left'])
+            ? min(100 - $args['width'], max(0, (float) $args['left']))
+            : 25;
+        $args['top'] = isset($args['top']) && is_scalar($args['top'])
+            ? min(100 - $args['height'], max(0, (float) $args['top']))
+            : 25;
+        $args['ratio'] = ! empty($args['ratio']);
+        $args['image_data'] = is_array($args['image_data']) ? $args['image_data'] : array();
         extract($args['image_data']);
         if( ! empty($args['image']) ) {
-			$image_url = str_replace('https:', 'http:', $args['image']);
-			$upload_url = str_replace('https:', 'http:', $upload_dir['baseurl']);
-            $watermark_image_i = str_replace($upload_url, '', $image_url);
-            $watermark_image = $upload_dir['basedir'].( (! empty($data['path']) && $watermark_image_i[0] != '/' && substr($upload_dir['basedir'], -1) != '/') ? '/' : '' ).$watermark_image_i;
-            if( ! file_exists($watermark_image) ) {
+            $watermark_image = self::$main->get_watermark_file_path($args['image']);
+            if( ! $watermark_image ) {
                 return $image_content;
             }
             $get_prepared_watermark = self::get_prepared_image($watermark_image);
             if( $get_prepared_watermark === FALSE ) {
-                echo '<span class="error">Incorrect MIME type Watermark('.$all_sizes[$base_type]['path'].')</span>';
+                echo '<span class="error">' . esc_html__('Incorrect watermark image.', 'product-watermark-for-woocommerce') . '</span>';
                 BeRocket_error_notices::add_plugin_error(self::$main->info['id'], 'Incorrect MIME type', array(
-                    'type'          => $base_type,
-                    'path'          => $all_sizes[$base_type]['path'],
-                    'attachment_id' => $post_id
+                    'path' => wp_basename($watermark_image),
                 ));
                 return $image_content;
             }
