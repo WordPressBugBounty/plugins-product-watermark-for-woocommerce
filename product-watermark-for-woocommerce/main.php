@@ -16,6 +16,7 @@ include_once(plugin_dir_path( __FILE__ ) . "includes/admin/funnels.php");
 class BeRocket_image_watermark extends BeRocket_Framework {
     public static $settings_name = 'br-image_watermark-options';
     protected static $instance;
+    public $import_export = array();
     protected $disable_settings_for_admin = array();
     protected $check_init_array = array(
         array(
@@ -117,6 +118,7 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         $this->feature_list = array();
         add_filter('BeRocket_framework_check_init_temp_php_extension', array($this, 'temp_php_extension_check'), 10, 2);
         parent::__construct( $this );
+        add_action('wp_ajax_berocket_watermark_image_details', array($this, 'ajax_watermark_image_details'));
         if( $this->check_framework_version() ) {
             if ( $this->init_validation() ) {
                 $options = $this->get_option();
@@ -520,6 +522,51 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         return $this->get_upload_file_path($relative_path);
     }
 
+    /** Read only local, existing Media Library images this user may manage. */
+    public function watermark_image_details($image_url) {
+        if (!current_user_can($this->option_page_capability())) {
+            return false;
+        }
+        $path = $this->get_watermark_file_path($image_url);
+        if (!$path || !is_readable($path)) {
+            return false;
+        }
+        $attachment_id = attachment_url_to_postid($image_url);
+        if (!$attachment_id || !wp_attachment_is_image($attachment_id)
+            || !current_user_can('edit_post', $attachment_id)
+            || realpath(get_attached_file($attachment_id)) !== realpath($path)) {
+            return false;
+        }
+        // Native readers retain compatibility with the plugin's WordPress 5.0 minimum.
+        $size = @getimagesize($path);
+        $bytes = @filesize($path);
+        if (!$size || empty($size[0]) || empty($size[1]) || empty($size['mime']) || false === $bytes) {
+            return false;
+        }
+        return array(
+            'width' => (int) $size[0],
+            'height' => (int) $size[1],
+            'mime' => $size['mime'],
+            'bytes' => (int) $bytes,
+            /* translators: 1: image width, 2: image height, 3: MIME type, 4: file size. */
+            'label' => sprintf(__('%1$s × %2$s px · %3$s · %4$s', 'product-watermark-for-woocommerce'),
+                number_format_i18n($size[0]), number_format_i18n($size[1]), $size['mime'], size_format($bytes, 1)),
+        );
+    }
+
+    public function ajax_watermark_image_details() {
+        if (!check_ajax_referer('berocket_watermark_image_details', '_ajax_nonce', false)
+            || !current_user_can($this->option_page_capability())) {
+            wp_send_json_error(array('message' => __('You are not allowed to view image details.', 'product-watermark-for-woocommerce')), 403);
+        }
+        $url = isset($_POST['url']) && is_string($_POST['url']) ? esc_url_raw(wp_unslash($_POST['url'])) : '';
+        $details = $this->watermark_image_details($url);
+        if (!$details) {
+            wp_send_json_error(array('message' => __('Image details unavailable.', 'product-watermark-for-woocommerce')), 404);
+        }
+        wp_send_json_success($details);
+    }
+
     public function set_thumbnail_id($return, $object_id, $meta_key, $meta_value) {
         if( $meta_key == '_thumbnail_id' && in_array(get_post_type($object_id), array('product', 'product_variation'), true) ) {
             update_post_meta($object_id, '_thumbnail_id_watermarked', '1');
@@ -634,6 +681,9 @@ class BeRocket_image_watermark extends BeRocket_Framework {
             'berocketImageWatermark',
             array(
                 'nonce' => wp_create_nonce('berocket_image_watermark_ajax'),
+                'detailsNonce' => wp_create_nonce('berocket_watermark_image_details'),
+                'detailsLoading' => __('Loading image details…', 'product-watermark-for-woocommerce'),
+                'detailsUnavailable' => __('Image details unavailable.', 'product-watermark-for-woocommerce'),
             )
         );
         wp_register_style( 'berocket_image_watermark_admin_style', plugins_url( 'css/admin.css', __FILE__ ), "", BeRocket_image_watermark_version );
@@ -752,40 +802,72 @@ class BeRocket_image_watermark extends BeRocket_Framework {
         $width = intval($width/5)*5;
         $top = min(100-$height, max(0, intval(br_get_value_from_array($options, array($water_name, 'top', $i)))));
         $left = min(100-$width, max(0, intval(br_get_value_from_array($options, array($water_name, 'left', $i)))));
+        $image_url = br_get_value_from_array($options, array($water_name, 'image', $i));
+        $image_details = $image_url ? $this->watermark_image_details($image_url) : false;
+        $small_logo = $image_details && $image_details['width'] < 64;
         echo '<td colspan="2">';
         ?>
-        <?php echo br_upload_image('br-image_watermark-options['.$water_name.'][image]['.$i.']', br_get_value_from_array($options, array($water_name, 'image', $i))); ?>
-        <p>
-            <label><input type="checkbox" name="br-image_watermark-options[<?php echo $water_name; ?>][ratio][<?php echo $i; ?>]" value="1"<?php if( ! empty($options[$water_name]['ratio'][$i]) ) echo ' checked'; ?>><?php _e('Save aspect ratio', 'product-watermark-for-woocommerce');?></label>
-        </p>
-        <table>
-            <tr>
-                <td>
-                    <div class="br_watermark_parent">
-                        <div class="br_watermark" data-id="<?php echo $water_name.'_'.$i; ?>" style="<?php echo 'width:', ($width * 2), 'px;height:', ($height * 2), 'px;top:', ($top * 2), 'px;left:', ($left * 2), 'px;'; ?>">
+        <div class="br-watermark-preview<?php echo $small_logo ? ' br-watermark-small-logo' : ''; ?>" data-background="white">
+            <?php echo br_upload_image('br-image_watermark-options['.$water_name.'][image]['.$i.']', $image_url); ?>
+            <p class="br-watermark-image-details description" role="status" aria-live="polite"<?php echo $image_url ? '' : ' hidden'; ?>><?php
+                echo esc_html($image_details ? $image_details['label'] : ($image_url ? __('Image details unavailable.', 'product-watermark-for-woocommerce') : ''));
+            ?></p>
+            <p class="br-watermark-logo-warning" role="status"<?php echo $small_logo ? '' : ' hidden'; ?>>
+                <?php esc_html_e('This logo is less than 64 pixels wide.', 'product-watermark-for-woocommerce'); ?>
+            </p>
+            <p class="br-watermark-preview-controls" hidden>
+                <label>
+                    <?php esc_html_e('Preview background', 'product-watermark-for-woocommerce'); ?>
+                    <select class="br-watermark-preview-background">
+                        <option value="white"><?php esc_html_e('White', 'product-watermark-for-woocommerce'); ?></option>
+                        <option value="dark"><?php esc_html_e('Dark', 'product-watermark-for-woocommerce'); ?></option>
+                        <option value="checkerboard"><?php esc_html_e('Checkerboard', 'product-watermark-for-woocommerce'); ?></option>
+                    </select>
+                </label>
+                <span class="description"><?php esc_html_e('Preview only. Does not change your images.', 'product-watermark-for-woocommerce'); ?></span>
+            </p>
+            <p>
+                <label><input type="checkbox" class="br-watermark-ratio" name="br-image_watermark-options[<?php echo $water_name; ?>][ratio][<?php echo $i; ?>]" value="1"<?php if( ! empty($options[$water_name]['ratio'][$i]) ) echo ' checked'; ?>><?php _e('Save aspect ratio', 'product-watermark-for-woocommerce');?></label>
+            </p>
+            <table>
+                <tr>
+                    <td>
+                        <div class="br_watermark_parent">
+                            <div class="br_watermark" data-id="<?php echo $water_name.'_'.$i; ?>" style="<?php echo 'width:', ($width * 2), 'px;height:', ($height * 2), 'px;top:', ($top * 2), 'px;left:', ($left * 2), 'px;'; ?>">
+                            </div>
                         </div>
-                    </div>
-                </td>
-                <td>
-                    <p>
-                        <label>Top: <span class="<?php echo $water_name.'_'.$i; ?>_top"><?php echo $top; ?></span> %</label>
-                        <input class="<?php echo $water_name.'_'.$i; ?>_top_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][top][<?php echo $i; ?>]" value="<?php echo $top; ?>">
-                    </p>
-                    <p>
-                        <label>Left: <span class="<?php echo $water_name.'_'.$i; ?>_left"><?php echo $left; ?></span> %</label>
-                        <input class="<?php echo $water_name.'_'.$i; ?>_left_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][left][<?php echo $i; ?>]" value="<?php echo $left; ?>">
-                    </p>
-                    <p>
-                        <label>Height: <span class="<?php echo $water_name.'_'.$i; ?>_height"><?php echo $height; ?></span> %</label>
-                        <input class="<?php echo $water_name.'_'.$i; ?>_height_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][height][<?php echo $i; ?>]" value="<?php echo $height; ?>">
-                    </p>
-                    <p>
-                        <label>Width: <span class="<?php echo $water_name.'_'.$i; ?>_width"><?php echo $width; ?></span> %</label>
-                        <input class="<?php echo $water_name.'_'.$i; ?>_width_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][width][<?php echo $i; ?>]" value="<?php echo $width; ?>">
-                    </p>
-                </td>
-            </tr>
-        </table>
+                    </td>
+                    <td>
+                        <p>
+                            <label>Top: <span class="<?php echo $water_name.'_'.$i; ?>_top"><?php echo $top; ?></span> %</label>
+                            <input class="<?php echo $water_name.'_'.$i; ?>_top_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][top][<?php echo $i; ?>]" value="<?php echo $top; ?>">
+                        </p>
+                        <p>
+                            <label>Left: <span class="<?php echo $water_name.'_'.$i; ?>_left"><?php echo $left; ?></span> %</label>
+                            <input class="<?php echo $water_name.'_'.$i; ?>_left_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][left][<?php echo $i; ?>]" value="<?php echo $left; ?>">
+                        </p>
+                        <p>
+                            <label>Height: <span class="<?php echo $water_name.'_'.$i; ?>_height"><?php echo $height; ?></span> %</label>
+                            <input class="<?php echo $water_name.'_'.$i; ?>_height_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][height][<?php echo $i; ?>]" value="<?php echo $height; ?>">
+                        </p>
+                        <p>
+                            <label>Width: <span class="<?php echo $water_name.'_'.$i; ?>_width"><?php echo $width; ?></span> %</label>
+                            <input class="<?php echo $water_name.'_'.$i; ?>_width_input" type="hidden" name="br-image_watermark-options[<?php echo $water_name; ?>][width][<?php echo $i; ?>]" value="<?php echo $width; ?>">
+                        </p>
+                    </td>
+                </tr>
+            </table>
+            <div class="br-watermark-preview-controls br-watermark-comparison" data-mode="after" hidden>
+                <div class="br-watermark-button-group" role="group" aria-label="<?php esc_attr_e('Watermark preview', 'product-watermark-for-woocommerce'); ?>">
+                    <button type="button" class="button not_berocket_button" data-mode="before" aria-pressed="false"><?php esc_html_e('Before', 'product-watermark-for-woocommerce'); ?></button>
+                    <button type="button" class="button button-primary not_berocket_button" data-mode="after" aria-pressed="true"><?php esc_html_e('After', 'product-watermark-for-woocommerce'); ?></button>
+                </div>
+                <div class="br-watermark-sample">
+                    <img src="<?php echo esc_url(plugins_url('images/watermark-sample.jpg', __FILE__)); ?>" width="400" height="400" loading="lazy" alt="<?php esc_attr_e('Sample product photo', 'product-watermark-for-woocommerce'); ?>">
+                    <img class="br-watermark-comparison-logo" alt="" hidden>
+                </div>
+            </div>
+        </div>
         <?php
         echo '</td>';
         return ob_get_clean();

@@ -4,8 +4,8 @@ Contributors: berocket, dholovnia
 Donate link: https://berocket.com/woocommerce-products-image-watermark/?utm_source=wordpress_org&utm_medium=donate&utm_campaign=image_watermark
 Tags: watermark, image watermark, product image, image protection, woocommerce
 Requires at least: 5.0
-Tested up to: 7.0.4
-Stable tag: 3.1.2
+Tested up to: 7.1.4
+Stable tag: 3.3
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -95,6 +95,21 @@ You can try this plugin's admin side [here](https://berocket.com/woocommerce-pro
 ---
 
 == Changelog ==
+
+= 3.3 =
+* Feature - Added Before and After buttons to compare the selected watermark on a sample product photo.
+* Feature - Added a warning for logo images less than 64 pixels wide.
+* Feature - Added 20%, 40% and 60% presets for the existing font transparency field in the Paid edition.
+* Enhancement - Updated BeRocket Framework to 3.1.5 with complete field exports and custom import/export handlers.
+* Fix - Prevented a PHP error when WooCommerce sections are not supplied as an array.
+* Fix - Skipped product, documentation and premium support links when the premium product slug is not configured.
+
+= 3.2 =
+* Feature - Added selectable watermark preview backgrounds, including a checkerboard for transparent images.
+* Feature - Displayed watermark image dimensions, format and file size.
+* Enhancement - Added or improved settings import/export and backup restoration.
+* Enhancement - Updated BeRocket Framework to 3.1.3 with CDN release metadata, reduced updater API traffic, isolated invalid catalog records, improved banner tracking, and an SVG account icon.
+* Enhancement - Updated compatibility declarations for WordPress 7.1.3 and WooCommerce 11.2.1.
 
 = 3.1.2 =
 * Enhancement - Updated BeRocket framework.

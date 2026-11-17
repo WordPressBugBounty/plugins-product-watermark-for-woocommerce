@@ -94,6 +94,81 @@
     padding: 0;
     margin: 0;
 }
+.br-watermark-preview .berocket_selected_image {
+    display: inline-block;
+    width: auto;
+    height: auto;
+    line-height: normal;
+    padding: 8px;
+    margin-bottom: 8px;
+    border: 1px solid #c3c4c7;
+    background-color: #fff;
+}
+.br-watermark-preview .berocket_selected_image img {
+    display: block;
+    max-width: 200px;
+    max-height: 200px;
+    width: auto;
+    height: auto;
+}
+.br-watermark-small-logo .berocket_selected_image {
+    border-color: #996800;
+    box-shadow: 0 0 0 1px #996800;
+}
+.br-watermark-logo-warning {
+    color: #755000;
+    font-weight: 600;
+}
+.br-watermark-preview[data-background="dark"] .berocket_selected_image {
+    background-color: #23282d;
+}
+.br-watermark-preview[data-background="checkerboard"] .berocket_selected_image {
+    background-color: #fff;
+    background-image: linear-gradient(45deg, #dcdcde 25%, transparent 25%, transparent 75%, #dcdcde 75%),
+        linear-gradient(45deg, #dcdcde 25%, transparent 25%, transparent 75%, #dcdcde 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+}
+.br-watermark-preview-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-inline-end: 8px;
+}
+.br-watermark-preview-controls .description {
+    display: inline-block;
+    vertical-align: middle;
+}
+.br-watermark-comparison {
+    margin-top: 12px;
+}
+.br-watermark-button-group:not([hidden]) {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    vertical-align: middle;
+}
+.br-watermark-transparency-presets {
+    margin-inline-start: 8px;
+}
+.br-watermark-sample {
+    position: relative;
+    width: 200px;
+    max-width: 100%;
+    margin-top: 8px;
+    overflow: hidden;
+}
+.br-watermark-sample > img:first-child {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.br-watermark-comparison-logo {
+    position: absolute;
+}
+.br-watermark-comparison[data-mode="before"] .br-watermark-comparison-logo {
+    display: none;
+}
 .br_watermark {
     cursor: move;
     width: 40px;

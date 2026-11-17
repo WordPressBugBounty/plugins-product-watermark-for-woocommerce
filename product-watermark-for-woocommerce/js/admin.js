@@ -1,7 +1,112 @@
 var br_saved_timeout;
 var br_savin_ajax = false;
 (function ($){
+    function updateComparisonLogo($editor, url) {
+        var $logo = $editor.find('.br-watermark-comparison-logo');
+        if (url) {
+            $logo.attr('src', url);
+        } else {
+            $logo.removeAttr('src');
+        }
+        $logo.prop('hidden', !url);
+    }
+
+    function updateComparisonPlacement($editor) {
+        var id = $editor.find('.br_watermark').data('id');
+        var width = Number($editor.find('.' + id + '_width_input').val());
+        var height = Number($editor.find('.' + id + '_height_input').val());
+        var left = Math.min(Number($editor.find('.' + id + '_left_input').val()), 100 - width);
+        var top = Math.min(Number($editor.find('.' + id + '_top_input').val()), 100 - height);
+        var keepRatio = $editor.find('.br-watermark-ratio').prop('checked');
+        // Match the renderers' alignment of an aspect-ratio-preserving logo within its box.
+        var position = width < 100 && height < 100
+            ? (100 * left / (100 - width)) + '% ' + (100 * top / (100 - height)) + '%'
+            : 'center';
+        $editor.find('.br-watermark-comparison-logo').css({
+            width: width + '%',
+            height: height + '%',
+            left: left + '%',
+            top: top + '%',
+            objectFit: keepRatio ? 'contain' : 'fill',
+            objectPosition: position
+        });
+    }
+
+    function showSmallLogoWarning($editor, isSmall) {
+        $editor.toggleClass('br-watermark-small-logo', isSmall);
+        $editor.find('.br-watermark-logo-warning').prop('hidden', !isSmall);
+    }
+
     $(document).ready( function () {
+        // Display-only: never submit this choice or trigger image processing.
+        $('.br-watermark-preview').each(function () {
+            var $editor = $(this);
+            updateComparisonLogo($editor, $editor.find('.berocket_image_value').val());
+            updateComparisonPlacement($editor);
+        });
+        $('.br-watermark-preview-controls, .br-watermark-transparency-presets').prop('hidden', false);
+        $(document).on('click', '.br-watermark-comparison button', function () {
+            var mode = $(this).data('mode');
+            $(this).closest('.br-watermark-comparison').attr('data-mode', mode).find('button').each(function () {
+                var active = $(this).data('mode') === mode;
+                $(this).attr('aria-pressed', String(active)).toggleClass('button-primary', active);
+            });
+        });
+        $(document).on('change', '.br-watermark-ratio', function () {
+            updateComparisonPlacement($(this).closest('.br-watermark-preview'));
+        });
+        $(document).on('click', '.br-watermark-transparency-presets button', function () {
+            $(this).closest('.br_field').find('.br-watermark-transparency:enabled')
+                .val($(this).data('transparency')).trigger('input').trigger('change');
+        });
+        $(document).on('change', '.br-watermark-preview .berocket_image_value', function () {
+            var $input = $(this);
+            var $editor = $input.closest('.br-watermark-preview');
+            var $details = $editor.find('.br-watermark-image-details');
+            var pending = $input.data('br-details-request');
+            // Forget the old request before aborting: its callback must not overwrite a new choice.
+            $input.removeData('br-details-request');
+            if (pending) {
+                pending.abort();
+            }
+            var url = $input.val();
+            updateComparisonLogo($editor, url);
+            showSmallLogoWarning($editor, false);
+            $details.text(url ? berocketImageWatermark.detailsLoading : '').prop('hidden', !url);
+            if (!url) {
+                return;
+            }
+            var request = $.post(ajaxurl, {
+                action: 'berocket_watermark_image_details',
+                _ajax_nonce: berocketImageWatermark.detailsNonce,
+                url: url
+            });
+            $input.data('br-details-request', request);
+            request.done(function (response) {
+                if ($input.data('br-details-request') === request) {
+                    var details = response && response.success && response.data;
+                    $details.text(details && typeof details.label === 'string'
+                        ? details.label : berocketImageWatermark.detailsUnavailable);
+                    showSmallLogoWarning($editor, Boolean(details && typeof details.width === 'number' && details.width < 64));
+                }
+            }).fail(function () {
+                if ($input.data('br-details-request') === request) {
+                    $details.text(berocketImageWatermark.detailsUnavailable);
+                }
+            }).always(function () {
+                if ($input.data('br-details-request') === request) {
+                    $input.removeData('br-details-request');
+                }
+            });
+        });
+        $(document).on('change', '.br-watermark-preview-background', function () {
+            var background = $(this).val();
+            if ($.inArray(background, ['white', 'dark', 'checkerboard']) === -1) {
+                background = 'white';
+                $(this).val(background);
+            }
+            $(this).closest('.br-watermark-preview').attr('data-background', background);
+        });
         function destroy_br_saved() {
             $('.br_saved').addClass('br_saved_remove');
             var $get = $('.br_saved');
@@ -156,9 +261,7 @@ var br_savin_ajax = false;
         }
         br_wm_img_count_hide();
     });
-})(jQuery);
 
-(function ($){
     function drop_for_10(value) {
         if( value % 10 >= 5 ) {
             value += 10 - value % 10;
@@ -193,6 +296,7 @@ var br_savin_ajax = false;
                     $('.'+id+'_height').text(height_p);
                     $('.'+id+'_width_input').val(width_p);
                     $('.'+id+'_height_input').val(height_p);
+                    updateComparisonPlacement($(this).closest('.br-watermark-preview'));
                 }
             })
             .draggable({
@@ -217,6 +321,7 @@ var br_savin_ajax = false;
                     $('.'+id+'_left').text(left_p);
                     $('.'+id+'_top_input').val(top_p);
                     $('.'+id+'_left_input').val(left_p);
+                    updateComparisonPlacement($(this).closest('.br-watermark-preview'));
                 }
             });
         }
